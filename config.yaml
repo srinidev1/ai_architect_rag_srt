@@ -1,0 +1,15 @@
+credentials:
+  usernames:
+    admin:
+      name: "Admin User"
+      password: "admin123"
+      role: "admin"
+    customer:
+      name: "Customer User"
+      password: "customer123"
+      role: "user"
+
+cookie:
+  expiry_days: 1
+  key: "RND_rtat"
+  name: "architect_rag_cookie"      
