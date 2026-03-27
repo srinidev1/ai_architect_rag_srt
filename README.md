@@ -81,6 +81,14 @@ The application uses basic credential-based authentication. Login credentials ar
 - **Retrieval Evaluation** — measures retrieval quality using MRR, nDCG, and keyword coverage metrics.
 - **Answer Evaluation** — scores LLM responses on accuracy, completeness, and relevance using the EPAM DIAL API as the judge.
 
+Both evaluation modes support an optional **reranking** step:
+
+- When the **Enable Reranking** option is selected, the retriever initially fetches **2× the configured `RETRIEVAL_K`** candidate documents from ChromaDB via Ollama.
+- Those candidates are then sent to the **EPAM DIAL API** for reranking, which scores and reorders them by relevance to the query.
+- Only the **top K documents** from the reranked results are ultimately passed to the LLM for answer generation.
+
+This two-stage retrieval approach improves context quality by using a more capable model to refine the initial vector-similarity results before they influence the final answer.
+
 ---
 
 ### Customer
@@ -95,29 +103,15 @@ Customer users can chat with the assistant, but with **context-level access cont
 
 > This implements **access-control-aware RAG** at the context-retrieval layer — not at the UI level.
 
----
-
-## Project Structure
-
-```
-.
-├── main.py                  # Application entry point
-├── config.yaml              # User credentials and roles
-├── .env                     # Environment variables (not committed)
-├── views/
-│   ├── ingestview.py        # Ingest UI
-│   ├── chatview.py          # Chat UI
-│   └── evaluationview.py    # Evaluation UI
-├── evaluation/
-│   └── eval.py              # Retrieval and answer evaluation logic
-├── answer.py                # RAG pipeline (retrieval + LLM call)
-└── vector_db/               # ChromaDB persistent store
-```
-
----
 
 ## Notes
 
 - The dataset used in this project is sourced from the **Ed Donner RAG tutorial**.
-- The EPAM DIAL API is used exclusively as a judge model during evaluation — it is not involved in the chat pipeline.
+- The EPAM DIAL API is used exclusively as a judge model during evaluation and reranking — it is not involved in the standard chat pipeline.
 - Ollama must be running locally before starting the application.
+
+## Changelog
+
+| Date | Change |
+|---|---|
+| 2026-03-27 | Added reranking support to Retrieval and Answer evaluations — fetches 2× K candidates via Ollama and reranks using EPAM DIAL API before selecting top K for the final answer. |
