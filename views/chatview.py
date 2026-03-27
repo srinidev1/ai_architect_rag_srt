@@ -5,7 +5,6 @@ from langchain_core.documents import Document
 
 DB_NAME = str(Path(__file__).parent.parent / "vector_db")
 
-
 def _init_session():
     """Bootstrap session state keys used by this view."""
     if "messages" not in st.session_state:
@@ -53,7 +52,7 @@ def _handle_question(question: str) -> None:
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking…"):
-            answer, docs = answer_question(question=question, userrole=userrole, history=history)
+            answer, docs = answer_question(question=question, userrole=userrole, rerank=False, history=history)
         st.markdown(answer)
 
     # 3. Persist answer + docs
@@ -76,6 +75,7 @@ def render():
 
     st.caption("Chat with your AI assistant powered by Insurellm knowledge base.")
 
+
     # Sidebar: clear history + source docs
     with st.sidebar:
         if st.button("🗑️ Clear conversation", use_container_width=True):
@@ -92,5 +92,6 @@ def render():
     # ── Input ──────────────────────────────────────────────────────────────────
     # Primary: bottom chat bar (feels like ChatGPT)
     user_input = st.chat_input("Ask me anything about Insurellm…")
+
     if user_input and user_input.strip():
         _handle_question(user_input.strip())

@@ -10,7 +10,8 @@ import requests
 from dotenv import load_dotenv
 from IPython.display import Markdown, display
 from openai import OpenAI
-
+from pydantic import BaseModel, Field
+from openai import AzureOpenAI
 
 load_dotenv(override=True)
 
@@ -21,6 +22,9 @@ API_KEY = os.getenv('API_KEY', 'ollama')
 RETRIEVAL_K = int(os.getenv('RETRIEVAL_K', 5))
 EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'all-MiniLM-L6-v2')
 DB_NAME = str(Path(__file__).parent.parent / "vector_db")
+
+dial_api_key = os.getenv('DIAL_API_KEY')
+DIALMODEL =  os.getenv('AZURE_MODEL', "gpt-4")
 
 SYSTEM_PROMPT = """
 You are a knowledgeable, friendly assistant representing the company Insurellm.
@@ -38,11 +42,58 @@ retriever = vectorstore.as_retriever()
 #initialize OpenAI client
 openai = OpenAI(base_url=BASE_URL, api_key=API_KEY)
 
-def fetch_context(question: str) -> list[Document]:
+dialclient = AzureOpenAI(
+    api_key         = dial_api_key,
+    api_version     = "2024-08-01-preview",
+    azure_endpoint  = "https://ai-proxy.lab.epam.com",
+)
+
+class Result(BaseModel):
+    page_content: str
+    metadata: dict
+
+
+class RankOrder(BaseModel):
+    order: list[int] = Field(
+        description="The order of relevance of chunks, from most relevant to least relevant, by chunk id number"
+    )
+
+def fetch_context(question: str, use_rerank: bool = False) -> list[Document]:
     """
     Retrieve relevant context documents for a question.
     """
-    return retriever.invoke(question, k=RETRIEVAL_K)
+    if rerank:
+        # If reranking is enabled, retrieve more documents and then filter them
+        initial_docs = retriever.invoke(question, k=RETRIEVAL_K * 2)
+        # Simple reranking: sort by relevance score (if available) or keep original order
+        sorted_docs = rerank(question, initial_docs)
+        #sorted(initial_docs, key=lambda d: d.metadata.get("relevance_score", 0), reverse=True)
+        return sorted_docs[:RETRIEVAL_K]
+    elif not rerank:
+        return retriever.invoke(question, k=RETRIEVAL_K)
+
+def rerank(question, chunks):
+    system_prompt = """
+You are a document re-ranker.
+You are provided with a question and a list of relevant chunks of text from a query of a knowledge base.
+The chunks are provided in the order they were retrieved; this should be approximately ordered by relevance, but you may be able to improve on that.
+You must rank order the provided chunks by relevance to the question, with the most relevant chunk first.
+Reply only with the list of ranked chunk ids, nothing else. Include all the chunk ids you are provided with, reranked.
+"""
+    user_prompt = f"The user has asked the following question:\n\n{question}\n\nOrder all the chunks of text by relevance to the question, from most relevant to least relevant. Include all the chunk ids you are provided with, reranked.\n\n"
+    user_prompt += "Here are the chunks:\n\n"
+    for index, chunk in enumerate(chunks):
+        user_prompt += f"# CHUNK ID: {index + 1}:\n\n{chunk.page_content}\n\n"
+    user_prompt += "Reply only with the list of ranked chunk ids, nothing else."
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    response = dialclient.chat.completions.parse(model=DIALMODEL,messages=messages,response_format=RankOrder)
+    reply = response.choices[0].message.content
+    order = RankOrder.model_validate_json(reply).order
+    return [chunks[i - 1] for i in order]
 
 
 def combined_question(question: str, history: list[dict] = []) -> str:
@@ -54,12 +105,12 @@ def combined_question(question: str, history: list[dict] = []) -> str:
 
 
 #def answer_question(question: str, history: list[dict] = []) -> tuple[str, list[Document]]:
-def answer_question(question: str,userrole: str, history: list[dict]) -> tuple[str, list[Document]]:
+def answer_question(question: str,userrole: str,rerank: bool, history: list[dict]) -> tuple[str, list[Document]]:
     """
     Answer the given question with RAG; return the answer and the context documents.
     """
     combined = combined_question(question, history)
-    docs = fetch_context(combined)
+    docs = fetch_context(combined, use_rerank=rerank)
     if userrole != "admin":
         filtered_docs = [
             doc for doc in docs

@@ -63,6 +63,8 @@ def complete_banner(count: int) -> str:
 
 # ── Retrieval evaluation ───────────────────────────────────────────────────────
 def run_retrieval_evaluation():
+    reRank = st.session_state.get("rerank_checkbox", False)
+    #print(f"Rerank enabled for retrieval: {reRank}")
     total_mrr = total_ndcg = total_coverage = 0.0
     category_mrr: dict[str, list[float]] = defaultdict(list)
     count = 0
@@ -70,7 +72,7 @@ def run_retrieval_evaluation():
     progress_bar = st.progress(0, text="Starting retrieval evaluation…")
     metrics_slot = st.empty()
 
-    for test, result, prog_value in evaluate_all_retrieval():
+    for test, result, prog_value in evaluate_all_retrieval(reRank=reRank):
         count += 1
         total_mrr      += result.mrr
         total_ndcg     += result.ndcg
@@ -99,9 +101,9 @@ def run_retrieval_evaluation():
     ])
     st.bar_chart(df.set_index("Category"), y="Average MRR", y_label="Average MRR", x_label="Category")
 
-
 # ── Answer evaluation ──────────────────────────────────────────────────────────
 def run_answer_evaluation():
+    reRankAnswer = st.session_state.get("rerank_answer_checkbox", False)
     total_accuracy = total_completeness = total_relevance = 0.0
     category_accuracy: dict[str, list[float]] = defaultdict(list)
     count = 0
@@ -109,7 +111,7 @@ def run_answer_evaluation():
     progress_bar = st.progress(0, text="Starting answer evaluation…")
     metrics_slot = st.empty()
 
-    for test, result, prog_value in evaluate_all_answers():
+    for test, result, prog_value in evaluate_all_answers(reRankAnswer = reRankAnswer):
         count += 1
         total_accuracy     += result.accuracy
         total_completeness += result.completeness
@@ -149,7 +151,8 @@ def render():
         return
     
     st.caption("Evaluate retrieval and answer quality for the Insurellm RAG system.")
-
+    st.checkbox("Enable Rerank for Retrieval Evaluation", key="rerank_checkbox")
+    
     # ── Retrieval section ──────────────────────────────────────────────────────
     st.markdown("## 🔍 Retrieval Evaluation")
     if st.button("Run Retrieval Evaluation", key="retrieval_btn"):
@@ -159,6 +162,7 @@ def render():
 
     # ── Answer section ─────────────────────────────────────────────────────────
     st.markdown("## 💬 Answer Evaluation")
+    st.checkbox("Enable Rerank for Answer Evaluation", key="rerank_answer_checkbox")
     if st.button("Run Answer Evaluation",  key="answer_btn"):
         run_answer_evaluation()
 

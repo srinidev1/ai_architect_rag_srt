@@ -9,10 +9,11 @@ from openai import AzureOpenAI
 from evaluation.test import TestQuestion, load_tests
 from implementation.answer import answer_question, fetch_context
 
-dial_api_key = os.getenv('DIAL_API_KEY')
-MODEL =  os.getenv('AZURE_MODEL', "gpt-4")
 
 load_dotenv(override=True)
+
+dial_api_key = os.getenv('DIAL_API_KEY')
+MODEL =  os.getenv('AZURE_MODEL', "gpt-4")
 
 #MODEL = "gpt-4.1-nano"
 db_name = "vector_db"
@@ -87,7 +88,7 @@ def calculate_ndcg(keyword: str, retrieved_docs: list, k: int = 10) -> float:
     return dcg / idcg if idcg > 0 else 0.0
 
 
-def evaluate_retrieval(test: TestQuestion, k: int = 10) -> RetrievalEval:
+def evaluate_retrieval(test: TestQuestion, rerank: bool = False, k: int = 10) -> RetrievalEval:
     """
     Evaluate retrieval performance for a test question.
 
@@ -99,7 +100,7 @@ def evaluate_retrieval(test: TestQuestion, k: int = 10) -> RetrievalEval:
         RetrievalEval object with MRR, nDCG, and keyword coverage metrics
     """
     # Retrieve documents using shared answer module
-    retrieved_docs = fetch_context(test.question)
+    retrieved_docs = fetch_context(test.question,use_rerank=rerank)
 
     # Calculate MRR (average across all keywords)
     mrr_scores = [calculate_mrr(keyword, retrieved_docs) for keyword in test.keywords]
@@ -123,19 +124,20 @@ def evaluate_retrieval(test: TestQuestion, k: int = 10) -> RetrievalEval:
     )
 
 
-def evaluate_answer(test: TestQuestion) -> tuple[AnswerEval, str, list]:
+def evaluate_answer(test: TestQuestion,rerank: bool) -> tuple[AnswerEval, str, list]:
     """
     Evaluate answer quality using LLM-as-a-judge (async).
 
     Args:
         test: TestQuestion object containing question and reference answer
+        rerank: Whether to use reranking for document retrieval
 
     Returns:
         Tuple of (AnswerEval object, generated_answer string, retrieved_docs list)
     """
     # Get RAG response using shared answer module
     #user role is hardcoded as "admin" here for evaluation purposes to ensure all tests have access to the same context and answer generation capabilities, regardless of the role-based access controls implemented in the chat interface. This allows for a consistent evaluation of the underlying retrieval and answer generation performance without being affected by potential differences in access permissions between admin and regular users.
-    generated_answer, retrieved_docs = answer_question(test.question,"admin",[])
+    generated_answer, retrieved_docs = answer_question(test.question,"admin",rerank,[])
 
     # LLM judge prompt
     judge_messages = [
@@ -173,22 +175,22 @@ Provide detailed feedback and scores from 1 (very poor) to 5 (ideal) for each di
     return answer_eval, generated_answer, retrieved_docs
 
 
-def evaluate_all_retrieval():
+def evaluate_all_retrieval(reRank: bool = False):
     """Evaluate all retrieval tests."""
     tests = load_tests()
     total_tests = len(tests)
     for index, test in enumerate(tests):
-        result = evaluate_retrieval(test)
+        result = evaluate_retrieval(test,rerank= reRank)
         progress = (index + 1) / total_tests
         yield test, result, progress
 
 
-def evaluate_all_answers():
+def evaluate_all_answers(reRankAnswer: bool = False):
     """Evaluate all answers to tests using batched async execution."""
     tests = load_tests()
     total_tests = len(tests)
     for index, test in enumerate(tests):
-        result = evaluate_answer(test)[0]
+        result = evaluate_answer(test, rerank=reRankAnswer)[0]
         progress = (index + 1) / total_tests
         yield test, result, progress
 
